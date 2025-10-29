@@ -1,30 +1,193 @@
 import { EventBus } from '../EventBus';
 import { Scene } from 'phaser';
+import Generator from '../gameObjects/generator';
+import Player from '../gameObjects/player';
 
-export class Game extends Scene
-{
-    constructor ()
-    {
-        super('Game');
+export class Game extends Scene {
+    constructor() {
+        super('Game')
+        this.player = null
+        this.score = 0
+        this.scoreText = null
     }
 
-    create ()
-    {
-        this.cameras.main.setBackgroundColor(0x00ff00);
-
-        this.add.image(512, 384, 'background').setAlpha(0.5);
-
-        this.add.text(512, 384, 'Make something fun!\nand share it with us:\nsupport@phaser.io', {
-            fontFamily: 'Arial Black', fontSize: 38, color: '#ffffff',
-            stroke: '#000000', strokeThickness: 8,
-            align: 'center'
-        }).setOrigin(0.5).setDepth(100);
-
-        EventBus.emit('current-scene-ready', this);
+    init(data) {
+        this.name = data.name
+        this.number = data.number
     }
 
-    changeScene ()
-    {
-        this.scene.start('GameOver');
+    create() {
+        this.width = this.sys.game.config.width;
+        this.height = this.sys.game.config.height;
+        this.center_width = this.width / 2;
+        this.center_height = this.height / 2;
+
+        this.cameras.main.setBackgroundColor(0x87ceeb);
+        this.obstacles = this.add.group();
+        this.coins = this.add.group();
+        this.generator = new Generator(this);
+        this.SPACE = this.input.keyboard.addKey(
+            Phaser.Input.Keyboard.KeyCodes.SPACE
+        );
+        this.player = new Player(this, this.center_width - 100, this.height - 200);
+        this.scoreText = this.add.bitmapText(
+            this.center_width,
+            10,
+            "arcade",
+            this.score,
+            20
+        );
+
+        this.physics.add.collider(
+            this.player,
+            this.obstacles,
+            this.hitObstacle,
+            () => {
+                return true;
+            },
+            this
+        );
+
+        this.physics.add.overlap(
+            this.player,
+            this.coins,
+            this.hitCoin,
+            () => {
+                return true;
+            },
+            this
+        );
+
+        this.loadAudios();
+        this.playMusic();
+
+        /*
+        We use the `pointerdown` event to listen to the mouse click or touch event.
+        */
+        this.input.on("pointerdown", (pointer) => this.jump(), this);
+
+        /*
+        We use `updateScoreEvent` to update the score every 100ms so the player can see the score increasing as long as he survives.
+        */
+        this.updateScoreEvent = this.time.addEvent({
+            delay: 100,
+            callback: () => this.updateScore(),
+            callbackScope: this,
+            loop: true,
+        });
+    }
+
+    /*
+This method is called when the player hits an obstacle. We stop the updateScoreEvent so the score doesn't increase anymore.
+
+And obviously, we finish the scene.
+*/
+    hitObstacle(player, obstacle) {
+        this.updateScoreEvent.destroy();
+        this.finishScene();
+    }
+
+    /*
+    This method is called when the player hits a coin. We play a sound, update the score, and destroy the coin.
+    */
+    hitCoin(player, coin) {
+        this.playAudio("coin");
+        this.updateScore(1000);
+        coin.destroy();
+    }
+
+    /*
+    We use this `loadAudios` method to load all the audio files that we need for the game.
+    
+    Then we'll play them using the `playAudio` method.
+    */
+    loadAudios() {
+        this.audios = {
+            jump: this.sound.add("jump"),
+            coin: this.sound.add("coin"),
+            dead: this.sound.add("dead"),
+        };
+    }
+
+    playAudio(key) {
+        this.audios[key].play();
+    }
+
+    /*
+    This method is specific to the music. We use it to play the theme music in a loop.
+    */
+    playMusic(theme = "theme") {
+        this.theme = this.sound.add(theme);
+        this.theme.stop();
+        this.theme.play({
+            mute: false,
+            volume: 1,
+            rate: 1,
+            detune: 0,
+            seek: 0,
+            loop: true,
+            delay: 0,
+        });
+    }
+
+    /*
+    This is the game loop. The function is called every frame.
+    
+    Here is where we can check if a key was pressed or the situation of the player to act accordingly. We use the `update` method to check if the player pressed the space key.
+    */
+    update() {
+        if (Phaser.Input.Keyboard.JustDown(this.SPACE)) {
+            this.jump();
+        } else if (this.player.body.blocked.down) {
+            this.jumpTween?.stop();
+            this.player.rotation = 0;
+            // ground
+        }
+    }
+
+    /*
+    This is the method that we use to make the player jump. A jump is just a velocity in the Y-axis. Gravity will do the rest.
+    
+    We also play a jumping sound and we add a tween to rotate the player while jumping.
+    */
+    jump() {
+        if (!this.player.body.blocked.down) return;
+        this.player.body.setVelocityY(-300);
+
+        this.playAudio("jump");
+        this.jumpTween = this.tweens.add({
+            targets: this.player,
+            duration: 1000,
+            angle: { from: 0, to: 360 },
+            repeat: -1,
+        });
+    }
+
+    /*
+    What should we do when we finish the game scene?
+    
+    - Stop the theme music
+    - Play the dead sound
+    - Set the score in the registry to show it in the `gameover` scene.
+    - Start the `gameover` scene.
+    
+    */
+    finishScene() {
+        this.theme.stop();
+        this.playAudio("dead");
+        this.registry.set("score", "" + this.score);
+        this.scene.start("gameover");
+    }
+
+    /*
+    This method is called every 100ms and it is used to update the score and show it on the screen.
+    */
+    updateScore(points = 1) {
+        this.score += points;
+        this.scoreText.setText(this.score);
+    }
+
+    changeScene() {
+        this.scene.start('GameOver')
     }
 }
