@@ -1,17 +1,65 @@
-class Player extends Phaser.GameObjects.Rectangle {
-    constructor(scene, x, y, number) {
-        super(scene, x, y, 32, 32, 0x0ff00)
-        this.setOrigin(0.5)
-        this.scene.add.existing(this)
-        this.scene.physics.add.existing(this)
-        this.body.collideWorldBounds = true
-        this.setScale(1)
-        this.jumping = false
-        this.invencible = false
-        this.health = 10
-        this.body.mass = 10
-        this.body.setDragY = 10
+export default class Player {
+    constructor() {
+        this.xOffset = 0;
+        this.speed = 0;
+        this.spriteKey = "player_straight";
+        this.yBounce = 0;
+
+        // Configurações de física
+        this.maxSpeed = 40;
+        this.accelRate = 20;     // aceleração por segundo
+        this.brakeRate = 30;     // frenagem por segundo
+        this.coastRate = 10;     // desaceleração natural
+        this.lateralSpeed = 0.01;
+    }
+
+    update(input, currentSegment, delta) {
+        const dt = delta / 1000; // transforma ms -> segundos para física realista
+
+        // ----- Velocidade -----
+
+        if (input.up) {
+            this.speed += this.accelRate * dt;
+        } else {
+            // desaceleração natural se não estiver acelerando
+            this.speed -= this.coastRate * dt;
+        }
+
+        if (input.down) {
+            this.speed -= this.brakeRate * dt;
+        }
+
+        // clamp speed
+        this.speed = Phaser.Math.Clamp(this.speed, 0, this.maxSpeed);
+
+        // ----- Movimento lateral -----
+        if (input.left && this.speed > 2.5) this.xOffset -= this.lateralSpeed * dt * 60;
+        if (input.right && this.speed > 2.5) this.xOffset += this.lateralSpeed * dt * 60;
+        this.xOffset = Phaser.Math.Clamp(this.xOffset, -1, 1);
+
+        const centrifugalFactor = 0.01;
+        const curve = currentSegment.curve || 0;
+        this.xOffset -= (curve * this.speed / this.maxSpeed) * centrifugalFactor * (delta/16.67);
+
+        // ----- Bounce -----
+        this.yBounce = (1.5 * Math.random() * (this.speed / this.maxSpeed)) * Phaser.Math.RND.pick([-1, 1]);
+
+        // ----- Sprite -----
+        let steer = this.xOffset;
+        let updown = currentSegment?.elevation || 0;
+
+        if (steer < -0.1) {
+            this.spriteKey = (updown > 0.05) ? "player_uphill_left" : "player_left";
+        } else if (steer > 0.1) {
+            this.spriteKey = (updown > 0.05) ? "player_uphill_right" : "player_right";
+        } else {
+            this.spriteKey = (updown > 0.05) ? "player_uphill_straight" : "player_straight";
+        }
+
+        const isOnlyUp = input.up && !input.down && !input.left && !input.right;
+
+        if (isOnlyUp) {
+            this.spriteKey = (updown > 0.05) ? "player_uphill_straight" : "player_straight";
+        }
     }
 }
-
-export default Player

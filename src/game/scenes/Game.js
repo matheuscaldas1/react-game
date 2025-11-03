@@ -1,193 +1,318 @@
-import { EventBus } from '../EventBus';
-import { Scene } from 'phaser';
-import Generator from '../gameObjects/generator';
-import Player from '../gameObjects/player';
+import { EventBus } from '../EventBus'
+import { Scene } from 'phaser'
+import RoadSegment from '../gameObjects/RoadSegment'
+import Camera from '../gameObjects/Camera'
+import Player from '../gameObjects/player'
+import Background from '../gameObjects/Background'
 
 export class Game extends Scene {
     constructor() {
         super('Game')
-        this.player = null
-        this.score = 0
-        this.scoreText = null
-    }
-
-    init(data) {
-        this.name = data.name
-        this.number = data.number
     }
 
     create() {
-        this.width = this.sys.game.config.width;
-        this.height = this.sys.game.config.height;
-        this.center_width = this.width / 2;
-        this.center_height = this.height / 2;
-
-        this.cameras.main.setBackgroundColor(0x87ceeb);
-        this.obstacles = this.add.group();
-        this.coins = this.add.group();
-        this.generator = new Generator(this);
-        this.SPACE = this.input.keyboard.addKey(
-            Phaser.Input.Keyboard.KeyCodes.SPACE
-        );
-        this.player = new Player(this, this.center_width - 100, this.height - 200);
-        this.scoreText = this.add.bitmapText(
-            this.center_width,
-            10,
-            "arcade",
-            this.score,
-            20
-        );
-
-        this.physics.add.collider(
-            this.player,
-            this.obstacles,
-            this.hitObstacle,
-            () => {
-                return true;
+        this.gameState = {
+            player: {
+                speed: 0,
+                position: 0.5, // 0-1 across road width
+                sprite: null
             },
-            this
+            road: {
+                segment: 0,
+                curve: 0,
+                elevation: 0
+            }
+        }
+        this.keys = this.input.keyboard.addKeys({
+            up: "W",
+            down: "S",
+            left: "A",
+            right: "D",
+            upArrow: 'UP',
+            downArrow: 'DOWN',
+            leftArrow: 'LEFT',
+            rightArrow: 'RIGHT',
+        })
+
+        this.graphics = this.add.graphics()
+        this.roadPlan = [
+            { curve: 0.0, length: 100, elevation: 0 },
+            { curve: 0.0, length: 100, elevation: -0.1 },
+            { curve: 0.0, length: 100, elevation: 0.1 },   // reta inicial
+            { curve: 0.6, length: 150, elevation: 0 },    // curva direita
+            { curve: -0.5, length: 100, elevation: 0 },   // curva esquerda
+            { curve: 0.0, length: 300, elevation: 0 },    // reta longa
+            { curve: 0.4, length: 120, elevation: 0 },    // curva direita leve
+            { curve: 0.0, length: 200, elevation: 0 }     // reta final
+        ];
+        this.segments = this.buildRoad(this.roadPlan);
+
+
+        this.speed = 0;
+        this.lateralOffset = 0;
+
+        this.camera = new Camera({
+            screenWidth: 800,
+            screenHeight: 600,
+            roadWidth: 2000,
+            depth: 0.8
+        })
+
+        this.playerLogic = new Player();
+
+        this.player = this.add.sprite(
+            this.camera.screenWidth / 2,
+            450,
+            'player_straight'
         );
+        this.player.setOrigin(0.5, 1);
 
-        this.physics.add.overlap(
-            this.player,
-            this.coins,
-            this.hitCoin,
-            () => {
-                return true;
-            },
-            this
-        );
+        // ======== background ========= 
+        const one = this.textures.get("one");
+        const two = this.textures.get("two");
+        const three = this.textures.get("three");
+        const four = this.textures.get("four");
+        const five = this.textures.get("five");
+        const six = this.textures.get("six");
 
-        this.loadAudios();
-        this.playMusic();
+        this.background = new Background(one, two, three, four, five, six);
+        const w = this.game.config.width;
+        const h = this.game.config.height;
 
-        /*
-        We use the `pointerdown` event to listen to the mouse click or touch event.
-        */
-        this.input.on("pointerdown", (pointer) => this.jump(), this);
+        this.bgOne = this.add.tileSprite(0, 0, w, h, 'one').setOrigin(0, 0).setScrollFactor(0);
+        this.bgTwo = this.add.tileSprite(0, 0, w, h, 'two').setOrigin(0, 0).setScrollFactor(0);
+        this.bgTrees = this.add.tileSprite(0, 0, w, h, 'three').setOrigin(0, 0).setScrollFactor(0);
+        this.bgFour = this.add.tileSprite(0, 0, w, h, 'four').setOrigin(0, 0).setScrollFactor(0);
+        this.bgFive = this.add.tileSprite(0, 0, w, h, 'five').setOrigin(0, 0).setScrollFactor(0);
+        this.bgSix = this.add.tileSprite(0, 0, w, h, 'six').setOrigin(0, 0).setScrollFactor(0);
 
-        /*
-        We use `updateScoreEvent` to update the score every 100ms so the player can see the score increasing as long as he survives.
-        */
-        this.updateScoreEvent = this.time.addEvent({
-            delay: 100,
-            callback: () => this.updateScore(),
-            callbackScope: this,
-            loop: true,
-        });
+        this.bgOne.setDepth(-6);
+        this.bgTwo.setDepth(-5);
+        this.bgTrees.setDepth(-4);
+        this.bgFour.setDepth(-3);
+        this.bgFive.setDepth(-2);
+        this.bgSix.setDepth(-1);
     }
 
-    /*
-This method is called when the player hits an obstacle. We stop the updateScoreEvent so the score doesn't increase anymore.
+    update(time, delta) {
+        const curve = this.gameState.road.curve || 0;
+        const camX = this.camera.x || 0;
 
-And obviously, we finish the scene.
-*/
-    hitObstacle(player, obstacle) {
-        this.updateScoreEvent.destroy();
-        this.finishScene();
-    }
+        this.bgOne.tilePositionX = camX * 5 * 0.02;
+        this.bgTwo.tilePositionX = camX * 10 * 0.06;
+        this.bgTrees.tilePositionX = camX * 20 * 0.12;
+        this.bgFour.tilePositionX = camX * 20 * 0.18;
+        this.bgFive.tilePositionX = camX * 20 * 0.24;
+        this.bgSix.tilePositionX = camX * 20 * 0.30;
 
-    /*
-    This method is called when the player hits a coin. We play a sound, update the score, and destroy the coin.
-    */
-    hitCoin(player, coin) {
-        this.playAudio("coin");
-        this.updateScore(1000);
-        coin.destroy();
-    }
 
-    /*
-    We use this `loadAudios` method to load all the audio files that we need for the game.
-    
-    Then we'll play them using the `playAudio` method.
-    */
-    loadAudios() {
-        this.audios = {
-            jump: this.sound.add("jump"),
-            coin: this.sound.add("coin"),
-            dead: this.sound.add("dead"),
+        const inputState = {
+            up: this.keys.up.isDown || this.keys.upArrow.isDown,
+            down: this.keys.down.isDown || this.keys.downArrow.isDown,
+            left: this.keys.left.isDown || this.keys.leftArrow.isDown,
+            right: this.keys.right.isDown || this.keys.rightArrow.isDown,
         };
+        const baseSegmentIndex = Math.floor(this.camera.z / this.segmentLength);
+        const currentSegment = this.segments[baseSegmentIndex]
+
+        // MOVIMENTO
+
+        this.playerLogic.update(inputState, currentSegment, this.game.loop.delta);
+        this.camera.moveZ(this.playerLogic.speed);
+
+        if (inputState.left) this.camera.moveX(-0.02);
+        if (inputState.right) this.camera.moveX(0.02);
+
+        // --- RENDERING ---
+        this.graphics.clear();
+
+        const maxDraw = Math.min(300, this.segments.length);
+        let x = 0;
+        let dx = 0;
+
+
+        for (let n = 0; n < maxDraw; n++) {
+            const segmentIndex = (baseSegmentIndex + n) % this.segments.length;
+            const segment = this.segments[segmentIndex];
+
+            if (!segment) {
+                console.warn('segment undefined at index', segmentIndex);
+                continue;
+            }
+            if (!segment.p1 || !segment.p2) {
+                console.warn('segment missing p1/p2', segmentIndex, segment);
+                continue;
+            }
+
+            dx += segment.curve || 0;
+            x += dx;
+            segment.p1.world.x = x;
+            segment.p2.world.x = x;
+
+            // garantir que screen exista antes de projetar (defesa dupla)
+            if (!segment.p1.screen) segment.p1.screen = { x: 0, y: 0, w: 0 };
+            if (!segment.p2.screen) segment.p2.screen = { x: 0, y: 0, w: 0 };
+
+            this.camera.projectPoint(segment.p1);
+            this.camera.projectPoint(segment.p2);
+
+            // proteção: se projectPoint não populou corretamente, log e continue
+            if (!segment.p1.screen || !segment.p2.screen ||
+                !isFinite(segment.p1.screen.y) || !isFinite(segment.p2.screen.y)) {
+                console.warn('segment screen inválido', segmentIndex, segment.p1.screen, segment.p2.screen);
+                continue;
+            }
+
+            segment.p1.index = segment.index;
+            segment.p2.index = segment.index;
+
+
+            drawSegment(
+                this.graphics,
+                segment.p1,
+                segment.p2,
+                segment.color,
+                this.camera.screenWidth
+            );
+
+        }
+
+        if (this.player.texture.key !== this.playerLogic.spriteKey) {
+            this.player.setTexture(this.playerLogic.spriteKey);
+        }
+
+        const roadCenterX = this.camera.screenWidth / 2;
+        const roadHalfWidth = this.camera.roadWidth / 2.5;
+        const lateral = this.playerLogic.xOffset * roadHalfWidth * 0.3;
+        this.player.x = roadCenterX + lateral;
+        this.yBounce = Math.random() * 4 - 2;
+        this.player.y = 450 + this.playerLogic.yBounce;
+
     }
 
-    playAudio(key) {
-        this.audios[key].play();
-    }
+    buildRoad(plan) {
+        const segments = [];
+        const segmentLength = 200;
 
-    /*
-    This method is specific to the music. We use it to play the theme music in a loop.
-    */
-    playMusic(theme = "theme") {
-        this.theme = this.sound.add(theme);
-        this.theme.stop();
-        this.theme.play({
-            mute: false,
-            volume: 1,
-            rate: 1,
-            detune: 0,
-            seek: 0,
-            loop: true,
-            delay: 0,
+        const add = (curve, length, elevation = 0) => {
+            this.addRoadSection(curve, length, segments, segmentLength, elevation);
+        };
+
+        plan.forEach(section => {
+            add(section.curve, section.length, section.elevation || 0);
         });
+
+        this.segments = segments;
+        this.totalSegments = segments.length;
+        this.segmentLength = segmentLength;
+
+        return segments;
     }
 
-    /*
-    This is the game loop. The function is called every frame.
-    
-    Here is where we can check if a key was pressed or the situation of the player to act accordingly. We use the `update` method to check if the player pressed the space key.
-    */
-    update() {
-        if (Phaser.Input.Keyboard.JustDown(this.SPACE)) {
-            this.jump();
-        } else if (this.player.body.blocked.down) {
-            this.jumpTween?.stop();
-            this.player.rotation = 0;
-            // ground
+
+
+
+    addRoadSection(curve, length, segments, segmentLength, elevation = 0) {
+        const startIndex = segments.length;
+        let lastY = startIndex > 0 ? segments[startIndex - 1].p2.world.y : 0;
+
+        for (let i = 0; i < length; i++) {
+            const idx = startIndex + i;
+
+            const seg = new RoadSegment(idx, idx * segmentLength, curve, elevation);
+
+            seg.p1.world.z = idx * segmentLength;
+            seg.p2.world.z = (idx + 1) * segmentLength;
+
+            seg.p1.world.y = lastY;
+            seg.p2.world.y = lastY + elevation * segmentLength;
+            lastY = seg.p2.world.y;
+
+            segments.push(seg);
         }
     }
 
-    /*
-    This is the method that we use to make the player jump. A jump is just a velocity in the Y-axis. Gravity will do the rest.
-    
-    We also play a jumping sound and we add a tween to rotate the player while jumping.
-    */
-    jump() {
-        if (!this.player.body.blocked.down) return;
-        this.player.body.setVelocityY(-300);
 
-        this.playAudio("jump");
-        this.jumpTween = this.tweens.add({
-            targets: this.player,
-            duration: 1000,
-            angle: { from: 0, to: 360 },
-            repeat: -1,
-        });
+
+
+}
+
+function drawSegment(g, p1Point, p2Point, color, screenWidth = 800, lanes = 3) {
+    if (!p1Point || !p2Point) return;
+    if (!p1Point.screen || !p2Point.screen) return;
+
+    const p1 = p1Point.screen;
+    const p2 = p2Point.screen;
+
+    if (!isFinite(p1.y) || !isFinite(p2.y)) return;
+
+    const topY = Math.min(p1.y, p2.y);
+    const bottomY = Math.max(p1.y, p2.y);
+
+    // ----- GRAMA -----
+    g.fillStyle(color.grass);
+    g.fillRect(0, topY, screenWidth, bottomY - topY);
+
+    // ---- RUMBLE ----
+    const rumble1 = p1.w * 0.1;
+    const rumble2 = p2.w * 0.1;
+
+    g.fillStyle(color.rumble);
+    drawPoly(g, [
+        p1.x - p1.w - rumble1, p1.y,
+        p1.x - p1.w, p1.y,
+        p2.x - p2.w, p2.y,
+        p2.x - p2.w - rumble2, p2.y
+    ]);
+    drawPoly(g, [
+        p1.x + p1.w + rumble1, p1.y,
+        p1.x + p1.w, p1.y,
+        p2.x + p2.w, p2.y,
+        p2.x + p2.w + rumble2, p2.y
+    ]);
+
+    // ----- ROAD -----
+    g.fillStyle(color.road);
+    drawPoly(g, [
+        p1.x - p1.w, p1.y,
+        p1.x + p1.w, p1.y,
+        p2.x + p2.w, p2.y,
+        p2.x - p2.w, p2.y
+    ]);
+
+    // ----- LANES ------
+    if (lanes > 1 && (p1Point.index % 3 === 0)) {
+        const laneW1 = (p1.w * 2) / lanes;
+        const laneW2 = (p2.w * 2) / lanes;
+        let laneX1 = p1.x - p1.w + laneW1;
+        let laneX2 = p2.x - p2.w + laneW2;
+
+        const markerW1 = Math.max(2, (p1.w * 0.05));
+        const markerW2 = Math.max(2, (p2.w * 0.05));
+
+        g.fillStyle(color.lane ?? 0xffffff, 1);
+
+        for (let lane = 1; lane < lanes; lane++) {
+            drawPoly(g, [
+                laneX1 - markerW1 / 2, p1.y,
+                laneX1 + markerW1 / 2, p1.y,
+                laneX2 + markerW2 / 2, p2.y,
+                laneX2 - markerW2 / 2, p2.y
+            ]);
+
+            laneX1 += laneW1;
+            laneX2 += laneW2;
+        }
     }
 
-    /*
-    What should we do when we finish the game scene?
-    
-    - Stop the theme music
-    - Play the dead sound
-    - Set the score in the registry to show it in the `gameover` scene.
-    - Start the `gameover` scene.
-    
-    */
-    finishScene() {
-        this.theme.stop();
-        this.playAudio("dead");
-        this.registry.set("score", "" + this.score);
-        this.scene.start("gameover");
-    }
+}
 
-    /*
-    This method is called every 100ms and it is used to update the score and show it on the screen.
-    */
-    updateScore(points = 1) {
-        this.score += points;
-        this.scoreText.setText(this.score);
+function drawPoly(g, pts) {
+    g.beginPath();
+    g.moveTo(pts[0], pts[1]);
+    for (let i = 2; i < pts.length; i += 2) {
+        g.lineTo(pts[i], pts[i + 1]);
     }
-
-    changeScene() {
-        this.scene.start('GameOver')
-    }
+    g.closePath();
+    g.fill();
 }

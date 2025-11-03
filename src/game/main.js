@@ -9,8 +9,9 @@ import { Preloader } from './scenes/Preloader';
 // https://docs.phaser.io/api-documentation/typedef/types-core#gameconfig
 const config = {
     type: Phaser.AUTO,
-    width: 600,
-    height: 300,
+    width: 800,
+    height: 600,
+    pixelArt: true,
     scale: {
         mode: Phaser.Scale.FIT,
         autoCenter: Phaser.Scale.CENTER_BOTH,
@@ -21,7 +22,7 @@ const config = {
         default: "arcade",
         arcade: {
             gravity: { y: 350 },
-            debug: true,
+            debug: false,
         }
     },
     scene: [
