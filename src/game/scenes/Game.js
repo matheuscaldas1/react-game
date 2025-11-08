@@ -1,13 +1,13 @@
-import { EventBus } from '../EventBus'
-import { Scene } from 'phaser'
-import RoadSegment from '../gameObjects/RoadSegment'
-import Camera from '../gameObjects/Camera'
-import Player from '../gameObjects/player'
-import Background from '../gameObjects/Background'
+import { EventBus } from "../EventBus";
+import { Scene } from "phaser";
+import RoadSegment from "../gameObjects/RoadSegment";
+import Camera from "../gameObjects/Camera";
+import Player from "../gameObjects/player";
+import Background from "../gameObjects/Background";
 
 export class Game extends Scene {
     constructor() {
-        super('Game')
+        super("Game");
     }
 
     create() {
@@ -15,38 +15,46 @@ export class Game extends Scene {
             player: {
                 speed: 0,
                 position: 0.5, // 0-1 across road width
-                sprite: null
+                sprite: null,
             },
             road: {
                 segment: 0,
                 curve: 0,
-                elevation: 0
-            }
-        }
+                elevation: 0,
+            },
+        };
+
         this.keys = this.input.keyboard.addKeys({
             up: "W",
             down: "S",
             left: "A",
             right: "D",
-            upArrow: 'UP',
-            downArrow: 'DOWN',
-            leftArrow: 'LEFT',
-            rightArrow: 'RIGHT',
-        })
+            upArrow: "UP",
+            downArrow: "DOWN",
+            leftArrow: "LEFT",
+            rightArrow: "RIGHT",
+        });
 
-        this.graphics = this.add.graphics()
+        // ESC para Pausar
+        this.input.keyboard.on("keydown-ESC", () => {
+            if (this.scene.isActive("Pause")) return;
+
+            this.scene.launch("Pause");
+            this.scene.pause();
+        });
+
+        this.graphics = this.add.graphics();
         this.roadPlan = [
             { curve: 0.0, length: 100, elevation: 0 },
             { curve: 0.0, length: 100, elevation: -0.1 },
-            { curve: 0.0, length: 100, elevation: 0.1 },   // reta inicial
-            { curve: 0.6, length: 150, elevation: 0 },    // curva direita
-            { curve: -0.5, length: 100, elevation: 0 },   // curva esquerda
-            { curve: 0.0, length: 300, elevation: 0 },    // reta longa
-            { curve: 0.4, length: 120, elevation: 0 },    // curva direita leve
-            { curve: 0.0, length: 200, elevation: 0 }     // reta final
+            { curve: 0.0, length: 100, elevation: 0.1 }, // reta inicial
+            { curve: 0.6, length: 150, elevation: 0 }, // curva direita
+            { curve: -0.5, length: 100, elevation: 0 }, // curva esquerda
+            { curve: 0.0, length: 300, elevation: 0 }, // reta longa
+            { curve: 0.4, length: 120, elevation: 0 }, // curva direita leve
+            { curve: 0.0, length: 200, elevation: 0 }, // reta final
         ];
         this.segments = this.buildRoad(this.roadPlan);
-
 
         this.speed = 0;
         this.lateralOffset = 0;
@@ -55,19 +63,19 @@ export class Game extends Scene {
             screenWidth: 800,
             screenHeight: 600,
             roadWidth: 2000,
-            depth: 0.8
-        })
+            depth: 0.8,
+        });
 
         this.playerLogic = new Player();
 
         this.player = this.add.sprite(
             this.camera.screenWidth / 2,
             450,
-            'player_straight'
+            "player_straight"
         );
         this.player.setOrigin(0.5, 1);
 
-        // ======== background ========= 
+        // ======== background =========
         const one = this.textures.get("one");
         const two = this.textures.get("two");
         const three = this.textures.get("three");
@@ -79,12 +87,30 @@ export class Game extends Scene {
         const w = this.game.config.width;
         const h = this.game.config.height;
 
-        this.bgOne = this.add.tileSprite(0, 0, w, h, 'one').setOrigin(0, 0).setScrollFactor(0);
-        this.bgTwo = this.add.tileSprite(0, 0, w, h, 'two').setOrigin(0, 0).setScrollFactor(0);
-        this.bgTrees = this.add.tileSprite(0, 0, w, h, 'three').setOrigin(0, 0).setScrollFactor(0);
-        this.bgFour = this.add.tileSprite(0, 0, w, h, 'four').setOrigin(0, 0).setScrollFactor(0);
-        this.bgFive = this.add.tileSprite(0, 0, w, h, 'five').setOrigin(0, 0).setScrollFactor(0);
-        this.bgSix = this.add.tileSprite(0, 0, w, h, 'six').setOrigin(0, 0).setScrollFactor(0);
+        this.bgOne = this.add
+            .tileSprite(0, 0, w, h, "one")
+            .setOrigin(0, 0)
+            .setScrollFactor(0);
+        this.bgTwo = this.add
+            .tileSprite(0, 0, w, h, "two")
+            .setOrigin(0, 0)
+            .setScrollFactor(0);
+        this.bgTrees = this.add
+            .tileSprite(0, 0, w, h, "three")
+            .setOrigin(0, 0)
+            .setScrollFactor(0);
+        this.bgFour = this.add
+            .tileSprite(0, 0, w, h, "four")
+            .setOrigin(0, 0)
+            .setScrollFactor(0);
+        this.bgFive = this.add
+            .tileSprite(0, 0, w, h, "five")
+            .setOrigin(0, 0)
+            .setScrollFactor(0);
+        this.bgSix = this.add
+            .tileSprite(0, 0, w, h, "six")
+            .setOrigin(0, 0)
+            .setScrollFactor(0);
 
         this.bgOne.setDepth(-6);
         this.bgTwo.setDepth(-5);
@@ -103,8 +129,7 @@ export class Game extends Scene {
         this.bgTrees.tilePositionX = camX * 20 * 0.12;
         this.bgFour.tilePositionX = camX * 20 * 0.18;
         this.bgFive.tilePositionX = camX * 20 * 0.24;
-        this.bgSix.tilePositionX = camX * 20 * 0.30;
-
+        this.bgSix.tilePositionX = camX * 20 * 0.3;
 
         const inputState = {
             up: this.keys.up.isDown || this.keys.upArrow.isDown,
@@ -112,12 +137,16 @@ export class Game extends Scene {
             left: this.keys.left.isDown || this.keys.leftArrow.isDown,
             right: this.keys.right.isDown || this.keys.rightArrow.isDown,
         };
+
         const baseSegmentIndex = Math.floor(this.camera.z / this.segmentLength);
-        const currentSegment = this.segments[baseSegmentIndex]
+        const currentSegment = this.segments[baseSegmentIndex];
 
         // MOVIMENTO
-
-        this.playerLogic.update(inputState, currentSegment, this.game.loop.delta);
+        this.playerLogic.update(
+            inputState,
+            currentSegment,
+            this.game.loop.delta
+        );
         this.camera.moveZ(this.playerLogic.speed);
 
         if (inputState.left) this.camera.moveX(-0.02);
@@ -130,17 +159,16 @@ export class Game extends Scene {
         let x = 0;
         let dx = 0;
 
-
         for (let n = 0; n < maxDraw; n++) {
             const segmentIndex = (baseSegmentIndex + n) % this.segments.length;
             const segment = this.segments[segmentIndex];
 
             if (!segment) {
-                console.warn('segment undefined at index', segmentIndex);
+                console.warn("segment undefined at index", segmentIndex);
                 continue;
             }
             if (!segment.p1 || !segment.p2) {
-                console.warn('segment missing p1/p2', segmentIndex, segment);
+                console.warn("segment missing p1/p2", segmentIndex, segment);
                 continue;
             }
 
@@ -149,23 +177,29 @@ export class Game extends Scene {
             segment.p1.world.x = x;
             segment.p2.world.x = x;
 
-            // garantir que screen exista antes de projetar (defesa dupla)
             if (!segment.p1.screen) segment.p1.screen = { x: 0, y: 0, w: 0 };
             if (!segment.p2.screen) segment.p2.screen = { x: 0, y: 0, w: 0 };
 
             this.camera.projectPoint(segment.p1);
             this.camera.projectPoint(segment.p2);
 
-            // proteção: se projectPoint não populou corretamente, log e continue
-            if (!segment.p1.screen || !segment.p2.screen ||
-                !isFinite(segment.p1.screen.y) || !isFinite(segment.p2.screen.y)) {
-                console.warn('segment screen inválido', segmentIndex, segment.p1.screen, segment.p2.screen);
+            if (
+                !segment.p1.screen ||
+                !segment.p2.screen ||
+                !isFinite(segment.p1.screen.y) ||
+                !isFinite(segment.p2.screen.y)
+            ) {
+                console.warn(
+                    "segment screen inválido",
+                    segmentIndex,
+                    segment.p1.screen,
+                    segment.p2.screen
+                );
                 continue;
             }
 
             segment.p1.index = segment.index;
             segment.p2.index = segment.index;
-
 
             drawSegment(
                 this.graphics,
@@ -174,7 +208,6 @@ export class Game extends Scene {
                 segment.color,
                 this.camera.screenWidth
             );
-
         }
 
         if (this.player.texture.key !== this.playerLogic.spriteKey) {
@@ -187,7 +220,6 @@ export class Game extends Scene {
         this.player.x = roadCenterX + lateral;
         this.yBounce = Math.random() * 4 - 2;
         this.player.y = 450 + this.playerLogic.yBounce;
-
     }
 
     buildRoad(plan) {
@@ -195,10 +227,16 @@ export class Game extends Scene {
         const segmentLength = 200;
 
         const add = (curve, length, elevation = 0) => {
-            this.addRoadSection(curve, length, segments, segmentLength, elevation);
+            this.addRoadSection(
+                curve,
+                length,
+                segments,
+                segmentLength,
+                elevation
+            );
         };
 
-        plan.forEach(section => {
+        plan.forEach((section) => {
             add(section.curve, section.length, section.elevation || 0);
         });
 
@@ -209,9 +247,6 @@ export class Game extends Scene {
         return segments;
     }
 
-
-
-
     addRoadSection(curve, length, segments, segmentLength, elevation = 0) {
         const startIndex = segments.length;
         let lastY = startIndex > 0 ? segments[startIndex - 1].p2.world.y : 0;
@@ -219,7 +254,12 @@ export class Game extends Scene {
         for (let i = 0; i < length; i++) {
             const idx = startIndex + i;
 
-            const seg = new RoadSegment(idx, idx * segmentLength, curve, elevation);
+            const seg = new RoadSegment(
+                idx,
+                idx * segmentLength,
+                curve,
+                elevation
+            );
 
             seg.p1.world.z = idx * segmentLength;
             seg.p2.world.z = (idx + 1) * segmentLength;
@@ -231,10 +271,6 @@ export class Game extends Scene {
             segments.push(seg);
         }
     }
-
-
-
-
 }
 
 function drawSegment(g, p1Point, p2Point, color, screenWidth = 800, lanes = 3) {
@@ -259,52 +295,67 @@ function drawSegment(g, p1Point, p2Point, color, screenWidth = 800, lanes = 3) {
 
     g.fillStyle(color.rumble);
     drawPoly(g, [
-        p1.x - p1.w - rumble1, p1.y,
-        p1.x - p1.w, p1.y,
-        p2.x - p2.w, p2.y,
-        p2.x - p2.w - rumble2, p2.y
+        p1.x - p1.w - rumble1,
+        p1.y,
+        p1.x - p1.w,
+        p1.y,
+        p2.x - p2.w,
+        p2.y,
+        p2.x - p2.w - rumble2,
+        p2.y,
     ]);
     drawPoly(g, [
-        p1.x + p1.w + rumble1, p1.y,
-        p1.x + p1.w, p1.y,
-        p2.x + p2.w, p2.y,
-        p2.x + p2.w + rumble2, p2.y
+        p1.x + p1.w + rumble1,
+        p1.y,
+        p1.x + p1.w,
+        p1.y,
+        p2.x + p2.w,
+        p2.y,
+        p2.x + p2.w + rumble2,
+        p2.y,
     ]);
 
     // ----- ROAD -----
     g.fillStyle(color.road);
     drawPoly(g, [
-        p1.x - p1.w, p1.y,
-        p1.x + p1.w, p1.y,
-        p2.x + p2.w, p2.y,
-        p2.x - p2.w, p2.y
+        p1.x - p1.w,
+        p1.y,
+        p1.x + p1.w,
+        p1.y,
+        p2.x + p2.w,
+        p2.y,
+        p2.x - p2.w,
+        p2.y,
     ]);
 
     // ----- LANES ------
-    if (lanes > 1 && (p1Point.index % 3 === 0)) {
+    if (lanes > 1 && p1Point.index % 3 === 0) {
         const laneW1 = (p1.w * 2) / lanes;
         const laneW2 = (p2.w * 2) / lanes;
         let laneX1 = p1.x - p1.w + laneW1;
         let laneX2 = p2.x - p2.w + laneW2;
 
-        const markerW1 = Math.max(2, (p1.w * 0.05));
-        const markerW2 = Math.max(2, (p2.w * 0.05));
+        const markerW1 = Math.max(2, p1.w * 0.05);
+        const markerW2 = Math.max(2, p2.w * 0.05);
 
         g.fillStyle(color.lane ?? 0xffffff, 1);
 
         for (let lane = 1; lane < lanes; lane++) {
             drawPoly(g, [
-                laneX1 - markerW1 / 2, p1.y,
-                laneX1 + markerW1 / 2, p1.y,
-                laneX2 + markerW2 / 2, p2.y,
-                laneX2 - markerW2 / 2, p2.y
+                laneX1 - markerW1 / 2,
+                p1.y,
+                laneX1 + markerW1 / 2,
+                p1.y,
+                laneX2 + markerW2 / 2,
+                p2.y,
+                laneX2 - markerW2 / 2,
+                p2.y,
             ]);
 
             laneX1 += laneW1;
             laneX2 += laneW2;
         }
     }
-
 }
 
 function drawPoly(g, pts) {
