@@ -120,9 +120,9 @@ export class Game extends Scene {
         this.bgSix.setDepth(-1);
 
         // === TIMER STYLE "OUTRUN" ===
-        this.timeTotal = 10000; // 10 segundos em ms
+        this.timeTotal = 30000;
         this.timeRemaining = this.timeTotal;
-        this.timeDisplay = 0; // segundos inteiros para exibir
+        this.timeDisplay = 0;
 
         this.timerText = this.add.text(650, 20, "TIME: 10", {
             fontFamily: "Arial",
@@ -177,6 +177,13 @@ export class Game extends Scene {
 
         const baseSegmentIndex = Math.floor(this.camera.z / this.segmentLength);
         const currentSegment = this.segments[baseSegmentIndex];
+
+        // ===== CHECKPOINT DETECTION =====
+        if (currentSegment && currentSegment.isCheckpoint && !currentSegment.checkpointHit) {
+            currentSegment.checkpointHit = true;
+            this.addTime(10); // +10 segundos
+            this.showCheckpointMessage("+10s");
+        }
 
         // MOVIMENTO
         this.playerLogic.update(
@@ -281,6 +288,19 @@ export class Game extends Scene {
         this.totalSegments = segments.length;
         this.segmentLength = segmentLength;
 
+        this.checkpoints = [
+            Math.floor(this.totalSegments * 0.25),
+            Math.floor(this.totalSegments * 0.50),
+            Math.floor(this.totalSegments * 0.75),
+        ];
+
+        this.checkpoints.forEach(i => {
+            if (this.segments[i]) {
+                this.segments[i].isCheckpoint = true;
+                this.segments[i].checkpointHit = false;
+            }
+        });
+
         return segments;
     }
 
@@ -310,11 +330,49 @@ export class Game extends Scene {
     }
 
     handleTimeUp() {
-    console.log("⏳ GAME OVER — Time Up!");
+        console.log("⏳ GAME OVER — Time Up!");
 
-    this.scene.pause();
-    this.scene.launch("GameOver");
+        this.scene.pause();
+        this.scene.launch("GameOver");
+    }
+
+    addTime(seconds) {
+        this.timeRemaining += seconds * 1000;
+
+        // Evita número negativo em loops futuros
+        this.timeDisplay = Math.floor(this.timeRemaining / 1000);
+        this.timerText.setText(`TIME: ${this.timeDisplay}`);
+
+        // Efeito visual no timer
+        this.timerText.setScale(1.4);
+        this.tweens.add({
+            targets: this.timerText,
+            scale: 1,
+            duration: 150,
+            ease: "Quad.easeOut"
+        });
+    }
+
+    showCheckpointMessage(msg) {
+    const text = this.add.text(400, 200, msg, {
+        fontFamily: "Arial",
+        fontSize: "48px",
+        fontStyle: "bold",
+        color: "#ffff00",
+        stroke: "#000",
+        strokeThickness: 6,
+    }).setOrigin(0.5);
+
+    this.tweens.add({
+        targets: text,
+        y: 120,
+        alpha: 0,
+        duration: 1500,
+        ease: "Quad.easeOut",
+        onComplete: () => text.destroy()
+    });
 }
+
 
 }
 
