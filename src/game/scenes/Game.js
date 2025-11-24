@@ -45,16 +45,18 @@ export class Game extends Scene {
 
         this.graphics = this.add.graphics();
         this.roadPlan = [
-            { curve: 0.0, length: 100, elevation: 0 },
-            { curve: 0.0, length: 100, elevation: -0.1 },
-            { curve: 0.0, length: 100, elevation: 0.1 }, // reta inicial
-            { curve: 0.6, length: 150, elevation: 0 }, // curva direita
-            { curve: -0.5, length: 100, elevation: 0 }, // curva esquerda
+            { curve: 0.0, length: 1000, elevation: 0 },
+            { curve: 1.0, length: 1000, elevation: 0 },
+            { curve: 0.0, length: 1000, elevation: 0 }, // reta inicial
+            { curve: -0.6, length: 1500, elevation: 0 }, // curva direita
+            { curve: -0.5, length: 600, elevation: 0 }, // curva esquerda
             { curve: 0.0, length: 300, elevation: 0 }, // reta longa
-            { curve: 0.4, length: 120, elevation: 0 }, // curva direita leve
-            { curve: 0.0, length: 200, elevation: 0 }, // reta final
+            { curve: 0.4, length: 1200, elevation: 0 }, // curva direita leve
+            { curve: 0.0, length: 2000, elevation: 0 }, // reta final
         ];
         this.segments = this.buildRoad(this.roadPlan);
+        this.addRoadsideObjects();
+
 
         this.speed = 0;
         this.lateralOffset = 0;
@@ -120,7 +122,7 @@ export class Game extends Scene {
         this.bgSix.setDepth(-1);
 
         // === TIMER STYLE "OUTRUN" ===
-        this.timeTotal = 30000;
+        this.timeTotal = 60000;
         this.timeRemaining = this.timeTotal;
         this.timeDisplay = 0;
 
@@ -131,6 +133,30 @@ export class Game extends Scene {
             color: "#fff",
         });
         this.timerText.setDepth(1000);
+
+        this.isOffRoad = false;
+
+        // tráfego / colisões (valores controlados)
+        this.traffic = [];
+        this.trafficSpritesGroup = this.add.group();
+
+        this.maxTraffic = 12;            // número máximo de carros na pista
+        this.spawnInterval = 3000;       // ms entre tentativas de spawn
+        this.lastTrafficSpawnTime = 0;
+
+        this.trafficSpawnAhead = 8000;   // distância (em world units) à frente do player para spawn
+        this.trafficMinGap = 2000;        // distância mínima entre carros no spawn (em world units)
+        this.trafficCarKeys = ["car01"];
+
+        // spawn inicial controlado (poucos carros, bem espaçados)
+        this.spawnInitialTraffic();
+
+        // timer para tentar spawns regulares (o próprio trySpawnTraffic valida tudo)
+        this.time.addEvent({
+            delay: 500, // checa frequentemente, mas trySpawnTraffic respeita spawnInterval
+            loop: true,
+            callback: () => this.trySpawnTraffic()
+        });
 
     }
 
@@ -177,12 +203,22 @@ export class Game extends Scene {
 
         const baseSegmentIndex = Math.floor(this.camera.z / this.segmentLength);
         const currentSegment = this.segments[baseSegmentIndex];
+        currentSegment.isOffRoad = Math.abs(this.playerLogic.xOffset) > 0.9;
+        const npcCars = currentSegment.cars || [];
+
+        const collisionCar = this.playerLogic.checkTrafficCollision(npcCars);
+
+        if (collisionCar) {
+            this.handleCollision(collisionCar);
+        }
+        this.updateTraffic(delta);
+
 
         // ===== CHECKPOINT DETECTION =====
         if (currentSegment && currentSegment.isCheckpoint && !currentSegment.checkpointHit) {
             currentSegment.checkpointHit = true;
             this.addTime(10); // +10 segundos
-            this.showCheckpointMessage("+10s");
+            this.showCheckpointMessage("+60s");
         }
 
         // MOVIMENTO
@@ -252,6 +288,46 @@ export class Game extends Scene {
                 segment.color,
                 this.camera.screenWidth
             );
+
+            // === OBJETOS DE CENÁRIO ===
+            if (segment.sprites) {
+                for (const obj of segment.sprites) {
+
+                    const worldX = segment.p1.world.x + obj.offset * (this.camera.roadWidth / 2);
+                    const worldY = segment.p1.world.y;
+                    const worldZ = segment.p1.world.z;
+
+                    const point = {
+                        world: { x: worldX, y: worldY, z: worldZ },
+                        camera: { x: 0, y: 0, z: 0 },
+                        screen: { x: 0, y: 0, w: 0 }
+                    };
+
+                    this.camera.projectPoint(point);
+
+                    if (point.screen.w <= 0) continue;
+
+                    let sprite = obj.sprite;
+
+                    // cria sprite se não existir
+                    if (!sprite) {
+                        sprite = this.add.sprite(0, 0, obj.source);
+                        sprite.setOrigin(0.5, 1);
+                        obj.sprite = sprite;
+                    }
+
+                    // posicionar na tela
+                    sprite.x = point.screen.x;
+                    sprite.y = point.screen.y;
+
+                    const scale = point.screen.w / 300;
+                    sprite.setScale(scale);
+
+                    // ordenar pela profundidade
+                    sprite.setDepth(150000 - point.screen.y);
+                }
+            }
+
         }
 
         if (this.player.texture.key !== this.playerLogic.spriteKey) {
@@ -337,7 +413,7 @@ export class Game extends Scene {
     }
 
     addTime(seconds) {
-        this.timeRemaining += seconds * 1000;
+        this.timeRemaining += seconds * 6000;
 
         // Evita número negativo em loops futuros
         this.timeDisplay = Math.floor(this.timeRemaining / 1000);
@@ -354,25 +430,253 @@ export class Game extends Scene {
     }
 
     showCheckpointMessage(msg) {
-    const text = this.add.text(400, 200, msg, {
-        fontFamily: "Arial",
-        fontSize: "48px",
-        fontStyle: "bold",
-        color: "#ffff00",
-        stroke: "#000",
-        strokeThickness: 6,
-    }).setOrigin(0.5);
+        const text = this.add.text(400, 200, msg, {
+            fontFamily: "Arial",
+            fontSize: "48px",
+            fontStyle: "bold",
+            color: "#ffff00",
+            stroke: "#000",
+            strokeThickness: 6,
+        }).setOrigin(0.5);
 
-    this.tweens.add({
-        targets: text,
-        y: 120,
-        alpha: 0,
-        duration: 1500,
-        ease: "Quad.easeOut",
-        onComplete: () => text.destroy()
-    });
-}
+        this.tweens.add({
+            targets: text,
+            y: 120,
+            alpha: 0,
+            duration: 1500,
+            ease: "Quad.easeOut",
+            onComplete: () => text.destroy()
+        });
+    }
 
+    addCar(spriteKey, z, offsetX, speed = null) {
+        // largura lógica usada para colisões (em "road width" units)
+        const width = spriteKey === "semi" ? 0.9 : 0.5;
+
+        const car = {
+            spriteKey,
+            z,            // posição no mundo (unidades compatíveis com segmentLength)
+            x: offsetX,   // lateral (-1..1 é o center normalized, pode extrapolar)
+            speed: speed ?? (80 + Math.random() * 80), // velocidade própria
+            width,
+            sprite: null, // referência ao sprite Phaser (criada no spawn)
+            alive: true
+        };
+
+        // cria sprite Phaser (posicionado temporariamente)
+        car.sprite = this.add.sprite(0, 0, spriteKey).setOrigin(0.5, 1);
+        car.sprite.setDepth(50); // ajustar conforme necessário
+        this.trafficSpritesGroup.add(car.sprite);
+
+        this.traffic.push(car);
+        return car;
+    }
+
+
+    spawnInitialTraffic() {
+        // gera poucos carros iniciais, bem espaçados à frente do player
+        const initialCount = 6; // ajuste: 3-8 é um bom range
+        let z = this.camera.z + 800; // começa um pouco à frente do player
+
+        for (let i = 0; i < initialCount; i++) {
+            // escolhe sprite e faixa lateral
+            const key = Phaser.Utils.Array.GetRandom(this.trafficCarKeys);
+            const offsetX = Phaser.Math.FloatBetween(-0.9, 0.9);
+            const speed = Phaser.Math.FloatBetween(80, 160);
+
+            // adiciona com espaçamento aleatório (800..1600)
+            this.addCar(key, z + Phaser.Math.Between(0, 800), offsetX, speed);
+
+            // incrementa z para o próximo spawn (evita empilhar)
+            z += Phaser.Math.Between(900, 1600);
+        }
+    }
+
+
+    trySpawnTraffic() {
+        const now = Date.now();
+
+        // respeita intervalo entre spawns
+        if (now - this.lastTrafficSpawnTime < this.spawnInterval) return;
+
+        // limite máximo de carros
+        if (this.traffic.length >= this.maxTraffic) return;
+
+        // escolhe um Z para spawn a certa distância à frente do player
+        const playerZ = this.camera.z;
+        const spawnZ = playerZ + Phaser.Math.Between(this.trafficSpawnAhead * 0.8, this.trafficSpawnAhead * 1.4);
+
+        // evita spawn muito próximo do jogador (em segmentos)
+        if (spawnZ - playerZ < 4000) return;
+
+        // evita spawn em cima de outros carros (minGap)
+        for (const c of this.traffic) {
+            if (Math.abs(c.z - spawnZ) < this.trafficMinGap) return;
+        }
+
+        // escolhe sprite aleatório e offset lateral em faixas (evita spawn no mesmo exato x)
+        const key = Phaser.Utils.Array.GetRandom(this.trafficCarKeys);
+        const laneOptions = [-0.9, -0.3, 0.3, 0.9];
+        const offsetX = Phaser.Utils.Array.GetRandom(laneOptions);
+
+        // velocidade coerente (NPCs geralmente mais lentos que player)
+        const speed = Phaser.Math.FloatBetween(20, 54);
+
+        // cria o carro
+        this.addCar(key, spawnZ, offsetX, speed);
+
+        this.lastTrafficSpawnTime = now;
+    }
+
+
+    updateTraffic(delta) {
+        const dt = delta / 1000;
+
+        // limpa lista de carros em cada segmento
+        for (let i = 0; i < this.segments.length; i++) {
+            this.segments[i].cars = [];
+        }
+
+        for (let i = this.traffic.length - 1; i >= 0; i--) {
+            const car = this.traffic[i];
+
+            // ===== MOVIMENTO RELATIVO (corrigido) =====
+            const playerSpeed = (this.playerLogic && typeof this.playerLogic.speed === "number")
+                ? this.playerLogic.speed
+                : 0;
+
+            // calcule o delta por frame (mantendo coerência com camera.moveZ que usa unidades/frame)
+            // usamos (delta / 16.67) para normalizar para "frames a 60fps"
+            const frameScale = Math.max(0.0001, delta / 16.67);
+
+            let relativeSpeed = car.speed - playerSpeed;
+
+            // fallback seguro se algo der errado
+            if (!isFinite(relativeSpeed)) relativeSpeed = car.speed;
+
+            // aplicar movimento relativo no Z (valores em unidades compatíveis com seu sistema)
+            car.z += relativeSpeed * frameScale;
+
+            // remove quando sai da pista (reaproveite/remova sprite)
+            if (car.z > this.totalSegments * this.segmentLength + 10000 || car.z < -10000) {
+                if (car.sprite) {
+                    car.sprite.destroy();
+                }
+                this.traffic.splice(i, 1);
+                continue;
+            }
+
+            const segIndex = Math.floor(car.z / this.segmentLength) % this.segments.length;
+            const seg = this.segments[segIndex];
+
+            if (!seg) {
+                if (car.sprite) car.sprite.setVisible(false);
+                continue;
+            }
+
+            seg.cars.push(car);
+            const curve = seg.curve || 0;
+            const centrifugalFactor = 0.01;
+
+            car.x -= (curve * (car.speed / this.playerLogic.maxSpeed))
+                * centrifugalFactor * (delta / 16.67);
+
+            // limita posição lateral
+            car.x = Phaser.Math.Clamp(car.x, -2.2, 2.2);
+
+            // ======== PROJETAR ========
+            const tmpPoint = {
+                world: {
+                    x: car.x * (this.camera.roadWidth / 2),
+                    y: seg.p1.world.y,
+                    z: car.z
+                },
+                camera: { x: 0, y: 0, z: 0 },
+                screen: { x: 0, y: 0, w: 0 }
+            };
+
+            this.camera.projectPoint(tmpPoint);
+
+            // ======== Desenhar carro ========
+            if (isFinite(tmpPoint.screen.x) && isFinite(tmpPoint.screen.y)) {
+                // escala baseada no 'w' projetado; ajuste divisor se quiser carros maiores/menores
+                const scale = tmpPoint.screen.w / 340;
+
+                car.sprite.x = tmpPoint.screen.x;
+                car.sprite.y = tmpPoint.screen.y;
+                car.sprite.setScale(Math.max(0.12, scale * 1.2));
+                car.sprite.setVisible(true);
+
+                // depth para ordenar (objetos mais embaixo ficam acima)
+                car.sprite.setDepth(200000 - tmpPoint.screen.y);
+            } else {
+                car.sprite.setVisible(false);
+            }
+        }
+    }
+
+
+
+    handleCollision(car) {
+
+        // 1. ZERA VELOCIDADE
+        this.playerLogic.speed = this.playerLogic.speed * 0.3; // igual Jake: perde 70%
+
+        // 2. EMPURRA O PLAYER PRO LADO
+        if (this.playerLogic.xOffset < car.x)
+            this.playerLogic.xOffset -= 0.2; // empurra pra esquerda
+        else
+            this.playerLogic.xOffset += 0.2; // empurra pra direita
+
+        // 3. EMPURRA NPC PARA O OUTRO LADO (efeito OutRun)
+        if (car.x < this.playerLogic.xOffset)
+            car.x -= 0.3;
+        else
+            car.x += 0.3;
+
+        // 4. Evita múltiplas colisões no mesmo frame
+        //    Faz o NPC "saltar" para trás
+        car.z -= 2;
+
+        // 5. (Opcional) Colocar animação ou som
+        // this.sound.play("crash");
+    }
+
+    addRoadsideObjects() {
+        const treeFrequency = 5;  // a cada X segmentos
+        const billboardFrequency = 200;
+
+        for (let i = 0; i < this.segments.length; i++) {
+            const seg = this.segments[i];
+
+            // Árvores dos dois lados
+            if (i % treeFrequency === 0) {
+                seg.sprites.push({
+                    source: "collision01",
+                    offset: -2.5
+                });
+                seg.sprites.push({
+                    source: "collision01",
+                    offset: 2.5
+                });
+            }
+
+            // Um billboard ocasional
+            if (i % billboardFrequency === 0) {
+                seg.sprites.push({
+                    source: "collision03",
+                    offset: 4.8
+                });
+            }
+
+            if (i % billboardFrequency === 0) {
+                seg.sprites.push({
+                    source: "collision02",
+                    offset: -4.8
+                });
+            }
+        }
+    }
 
 }
 

@@ -22,6 +22,10 @@ export class Boot extends Scene {
         this.load.image("four", "./assets/Background/four.png")
         this.load.image("five", "./assets/Background/five.png")
         this.load.image("six", "./assets/Background/six.png")
+        this.load.image("car01", "./assets/Colision/car01.png")
+        this.load.image("collision01", "./assets/Colision/collision01.png")
+        this.load.image("collision02", "./assets/Colision/collision02.png")
+        this.load.image("collision03", "./assets/Colision/collision03.png")
         this.load.bitmapFont(
             "arcade",
             "assets/fonts/arcade.png",
