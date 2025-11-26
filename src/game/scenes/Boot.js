@@ -26,6 +26,9 @@ export class Boot extends Scene {
         this.load.image("collision01", "./assets/Colision/collision01.png")
         this.load.image("collision02", "./assets/Colision/collision02.png")
         this.load.image("collision03", "./assets/Colision/collision03.png")
+        this.load.audio('backgroundMusic', './assets/sounds/track4.wav')
+        this.load.audio('engine', './assets/sounds/car_motor.wav')
+        this.load.audio('crash', './assets/sounds/car_crash.wav')
         this.load.bitmapFont(
             "arcade",
             "assets/fonts/arcade.png",

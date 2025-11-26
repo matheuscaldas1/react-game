@@ -107,6 +107,7 @@ export class Pause extends Scene {
     restartGame() {
         EventBus.emit("pause-closed");
 
+        this.sound.remove('backgroundMusic');
         this.scene.stop("Game");
         this.scene.stop("Pause");
         this.scene.start("Game");

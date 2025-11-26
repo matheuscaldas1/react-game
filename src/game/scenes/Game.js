@@ -11,6 +11,39 @@ export class Game extends Scene {
     }
 
     create() {
+        this.sound.stopAll();
+
+        const backgroundMusic = this.sound.add('backgroundMusic')
+        backgroundMusic.loop = true
+        backgroundMusic.volume = 0.3
+        backgroundMusic.play()
+
+        this.engineSfx = this.sound.add('engine')
+        const soundAsset = this.cache.audio.get('engine')
+        const duration = soundAsset ? soundAsset.duration : 0
+        const startPoint = 18
+        if (duration > startPoint) {
+            this.engineSfx.addMarker({
+                name: 'loopMotor',
+                start: startPoint,
+                duration: 5,
+                config: {
+                    loop: true,
+                    volume: 0.2
+                }
+            });
+            this.engineSfx.play('loopMotor');
+        } else {
+            // Fallback: Se algo der errado com a duração, toca o som inteiro
+            console.warn("Audio engine muito curto ou duração não encontrada.");
+            this.engineSfx.play({ loop: true, volume: 0.6 });
+        }
+
+        // Define a taxa inicial
+        this.engineSfx.setRate(0.5);
+
+        this.crashSfx = this.sound.add('crash');
+
         this.gameState = {
             player: {
                 speed: 0,
@@ -158,6 +191,10 @@ export class Game extends Scene {
             callback: () => this.trySpawnTraffic()
         });
 
+        this.playerOffset = 2400;
+        this.bounce = 0;
+        this.xOffset = 0;
+
     }
 
     update(time, delta) {
@@ -183,6 +220,33 @@ export class Game extends Scene {
             }
         }
 
+        // ===============================================
+        // LÓGICA DE ÁUDIO DO MOTOR (RPM)
+        // ===============================================
+
+        // Proteção: se o som não estiver tocando, ignora
+        if (this.engineSfx && this.engineSfx.isPlaying) {
+
+            const currentSpeed = this.playerLogic.speed;
+            // Assumindo que sua velocidade máxima seja por volta de 240 (ajuste esse número)
+            const maxSpeed = 80;
+
+            // Cálculo da taxa:
+            // Começa em 0.5 (marcha lenta) e adiciona até +1.5 baseado na % da velocidade
+            let targetRate = 0.5 + (currentSpeed / maxSpeed) * 1.5;
+
+            // Limita para não ficar agudo demais ou grave demais
+            targetRate = Phaser.Math.Clamp(targetRate, 0.5, 2.5);
+
+            // Aplica a taxa
+            this.engineSfx.setRate(targetRate);
+        }
+
+        this.xOffset += this.bounce;
+        this.bounce = this.bounce * 0.9;
+        if (Math.abs(this.bounce) < 0.001) this.bounce = 0;
+        this.xOffset = Phaser.Math.Clamp(this.xOffset, -3, 3);
+
 
         const curve = this.gameState.road.curve || 0;
         const camX = this.camera.x || 0;
@@ -202,15 +266,47 @@ export class Game extends Scene {
         };
 
         const baseSegmentIndex = Math.floor(this.camera.z / this.segmentLength);
+        const playerZ = this.camera.z + this.playerOffset;
         const currentSegment = this.segments[baseSegmentIndex];
+        const playerSegmentIndex = Math.floor(playerZ / this.segmentLength);
         currentSegment.isOffRoad = Math.abs(this.playerLogic.xOffset) > 0.9;
-        const npcCars = currentSegment.cars || [];
+        let potentialCollisions = [];
+        const playerSegIndex = Math.floor(playerZ / this.segmentLength) % this.segments.length;
+        const playerSeg = this.segments[playerSegIndex];
 
-        const collisionCar = this.playerLogic.checkTrafficCollision(npcCars);
+        for (let i = 0; i <= 1; i++) {
+            const checkIndex = (playerSegmentIndex + i) % this.segments.length;
+            const seg = this.segments[checkIndex];
+
+            if (seg && seg.cars && seg.cars.length > 0) {
+                potentialCollisions = potentialCollisions.concat(seg.cars);
+            }
+        }
+
+        const collisionCar = this.playerLogic.checkTrafficCollision(potentialCollisions, playerZ);
 
         if (collisionCar) {
             this.handleCollision(collisionCar);
         }
+
+
+        if (playerSeg && playerSeg.sprites && playerSeg.sprites.length > 0) {
+
+            for (const obj of playerSeg.sprites) {
+                // Largura do Player (ajuste conforme necessário, 0.8 é um valor padrão)
+                const playerW = 0.8;
+                // Largura do Objeto (definimos 0.6 ou 0.8 ali em cima, ou usa padrão)
+                const objW = obj.width || 0.6;
+
+                // Lógica de Sobreposição Lateral (X)
+                // Se a distância entre o centro do player e o centro do objeto 
+                // for menor que a soma de suas metades, houve colisão.
+                if (Math.abs(this.playerLogic.xOffset - obj.offset) < (playerW / 2 + objW / 2)) {
+                    this.handleSceneryCollision(obj);
+                }
+            }
+        }
+
         this.updateTraffic(delta);
 
 
@@ -321,7 +417,8 @@ export class Game extends Scene {
                     sprite.y = point.screen.y;
 
                     const scale = point.screen.w / 300;
-                    sprite.setScale(scale);
+                    const customScale = obj.scale || 1;
+                    sprite.setScale(scale * customScale);
 
                     // ordenar pela profundidade
                     sprite.setDepth(150000 - point.screen.y);
@@ -407,6 +504,10 @@ export class Game extends Scene {
 
     handleTimeUp() {
         console.log("⏳ GAME OVER — Time Up!");
+
+        if (this.backgroundMusic) {
+            this.backgroundMusic.stop();
+        }
 
         this.scene.pause();
         this.scene.launch("GameOver");
@@ -618,62 +719,96 @@ export class Game extends Scene {
 
 
     handleCollision(car) {
+        if (!this.crashSfx.isPlaying) {
+            this.crashSfx.play({ volume: 0.8 });
+        }
 
-        // 1. ZERA VELOCIDADE
-        this.playerLogic.speed = this.playerLogic.speed * 0.3; // igual Jake: perde 70%
+        // 1. ZERA VELOCIDADE (Mantém sua lógica)
+        this.playerLogic.speed = this.playerLogic.speed * 0.3;
 
-        // 2. EMPURRA O PLAYER PRO LADO
-        if (this.playerLogic.xOffset < car.x)
-            this.playerLogic.xOffset -= 0.2; // empurra pra esquerda
-        else
-            this.playerLogic.xOffset += 0.2; // empurra pra direita
+        // 2. APLICA IMPULSO SUAVE NO PLAYER
+        // Define uma força de impacto. 0.06 é um bom valor para começar.
+        // Se quiser um impacto mais forte, aumente para 0.08 ou 0.1.
+        const impactForce = 0.06;
 
-        // 3. EMPURRA NPC PARA O OUTRO LADO (efeito OutRun)
-        if (car.x < this.playerLogic.xOffset)
-            car.x -= 0.3;
-        else
-            car.x += 0.3;
+        if (this.playerLogic.xOffset < car.x) {
+            // Empurra para a ESQUERDA (negativo)
+            this.playerLogic.bounce = -impactForce;
+        } else {
+            // Empurra para a DIREITA (positivo)
+            this.playerLogic.bounce = impactForce;
+        }
 
-        // 4. Evita múltiplas colisões no mesmo frame
-        //    Faz o NPC "saltar" para trás
-        car.z -= 2;
+        // 3. EMPURRA O NPC SUAVEMENTE (Usando Tween do Phaser)
+        // Como o NPC não tem a lógica complexa de update do player, 
+        // usamos um Tween para animar o deslize dele.
+        const npcDirection = (car.x < this.playerLogic.xOffset) ? -0.5 : 0.5;
 
-        // 5. (Opcional) Colocar animação ou som
-        // this.sound.play("crash");
+        this.tweens.add({
+            targets: car,
+            x: car.x + npcDirection, // Destino final do deslize
+            duration: 500,           // Duração em ms (meio segundo)
+            ease: 'Cubic.out'        // Começa rápido e termina devagar
+        });
+
+        // 4. Evita múltiplas colisões (Mantém sua lógica)
+        car.z -= 2; // Pequeno recuo para sair da hitbox imediatamente
+    }
+
+    handleSceneryCollision(obj) {
+        // Se já estiver parado ou muito devagar, ignora (evita loops de colisão)
+        if (this.playerLogic.speed < 10) return;
+
+        this.crashSfx.play({ volume: 1.0, detune: -200 });
+
+        // 1. PARA O CARRO DRASTICAMENTE
+        this.playerLogic.speed = 0;
+
+        // 2. EMPURRA DE VOLTA (para não ficar preso dentro da árvore)
+        // Se bateu na direita, joga um pouco pra esquerda
+        if (this.playerLogic.xOffset > obj.offset) {
+            this.playerLogic.xOffset += 0.8;
+        } else {
+            this.playerLogic.xOffset -= 0.8;
+        }
+
+        // 3. EFEITO VISUAL (Shake na câmera)
+        this.cameras.main.shake(200, 0.02);
+
+        // 4. (Opcional) Som de batida seca
+        // this.sound.play('treeHit');
     }
 
     addRoadsideObjects() {
-        const treeFrequency = 5;  // a cada X segmentos
-        const billboardFrequency = 200;
+        // Removemos o "treeFrequency" fixo
+        const billboardFrequency = 1000;
 
         for (let i = 0; i < this.segments.length; i++) {
             const seg = this.segments[i];
 
-            // Árvores dos dois lados
-            if (i % treeFrequency === 0) {
+            // --- CORREÇÃO DA DENSIDADE ---
+            // Usa aleatoriedade (Math.random).
+            // 0.03 significa 3% de chance de ter árvore em um segmento. 
+            // Se quiser mais árvores, aumente para 0.05 ou 0.1
+            if (Math.random() < 0.03) {
+
+                // Escolhe um lado aleatório (-1 ou 1) e multiplica pela distância
+                const side = Math.random() > 0.5 ? 1 : -1;
+                // Distância da pista: entre 2.5 e 5.0 unidades (para variar a profundidade lateral)
+                const distance = 2.0 + Math.random() * 3.0;
+
                 seg.sprites.push({
                     source: "collision01",
-                    offset: -2.5
-                });
-                seg.sprites.push({
-                    source: "collision01",
-                    offset: 2.5
+                    offset: distance * side,
+                    width: 0.6 // Adicionamos uma propriedade de largura lógica para colisão
                 });
             }
+            // -----------------------------
 
-            // Um billboard ocasional
+            // Mantém os billboards (eles são raros, ok usar modulo)
             if (i % billboardFrequency === 0) {
-                seg.sprites.push({
-                    source: "collision03",
-                    offset: 4.8
-                });
-            }
-
-            if (i % billboardFrequency === 0) {
-                seg.sprites.push({
-                    source: "collision02",
-                    offset: -4.8
-                });
+                seg.sprites.push({ source: "collision03", offset: 5.8, width: 1.8, scale: 5.0 });
+                seg.sprites.push({ source: "collision02", offset: -4.8, width: 2.8, scale: 3.5 });
             }
         }
     }
