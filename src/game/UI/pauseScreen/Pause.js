@@ -27,7 +27,7 @@ export class Pause extends Scene {
                 this.center_width,
                 this.center_height - 90,
                 "arcade",
-                "JOGO PAUSADO",
+                "PAUSE",
                 30
             )
             .setOrigin(0.5);
@@ -37,7 +37,7 @@ export class Pause extends Scene {
                 this.center_width,
                 this.center_height - 40,
                 "arcade",
-                "ESC / P para continuar",
+                "ESC / P to continue",
                 16
             )
             .setOrigin(0.5);
@@ -47,7 +47,7 @@ export class Pause extends Scene {
                 this.center_width,
                 this.center_height + 10,
                 "arcade",
-                "[ CONTINUAR ]",
+                "[ CONTINUE ]",
                 18
             )
             .setOrigin(0.5)
@@ -58,7 +58,7 @@ export class Pause extends Scene {
                 this.center_width,
                 this.center_height + 50,
                 "arcade",
-                "REINICIAR FASE",
+                "RESTART",
                 18
             )
             .setOrigin(0.5)
@@ -69,7 +69,7 @@ export class Pause extends Scene {
                 this.center_width,
                 this.center_height + 90,
                 "arcade",
-                "VOLTAR AO MENU",
+                "BACK TO MENU",
                 18
             )
             .setOrigin(0.5)
