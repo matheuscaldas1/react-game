@@ -6,7 +6,7 @@ export default class Player {
         this.yBounce = 0;
 
         // Configurações de física
-        this.maxSpeed = 80;
+        this.maxSpeed = 120;
         this.accelRate = 20;     // aceleração por segundo
         this.brakeRate = 30;     // frenagem por segundo
         this.coastRate = 10;     // desaceleração natural

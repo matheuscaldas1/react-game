@@ -5,6 +5,7 @@ import { MainMenu } from './scenes/MainMenu';
 import Phaser from 'phaser';
 import { Preloader } from './scenes/Preloader';
 import { Pause } from "./UI/pauseScreen/Pause";
+import { Finish } from './scenes/Finish';
 
 
 // Find out more information about the Game Config at:
@@ -33,7 +34,8 @@ const config = {
         MainMenu,
         Game,
         GameOver,
-        Pause
+        Pause,
+        Finish
     ]
 };
 
