@@ -299,8 +299,10 @@ export class Game extends Scene {
             right: this.keys.right.isDown || this.keys.rightArrow.isDown,
         };
 
-        const baseSegmentIndex = Math.floor(this.camera.z / this.segmentLength);
         const playerZ = this.camera.z + this.playerOffset;
+        const baseSegmentIndex =
+            Math.floor(this.camera.z / this.segmentLength) %
+            this.segments.length;
         const currentSegment = this.segments[baseSegmentIndex];
         const playerSegmentIndex = Math.floor(playerZ / this.segmentLength);
         currentSegment.isOffRoad = Math.abs(this.playerLogic.xOffset) > 0.9;
@@ -329,14 +331,11 @@ export class Game extends Scene {
 
         if (playerSeg && playerSeg.sprites && playerSeg.sprites.length > 0) {
             for (const obj of playerSeg.sprites) {
-                // Largura do Player (ajuste conforme necessário, 0.8 é um valor padrão)
+                if (obj.noCollision) continue; // <-- ADICIONE ISSO
+
                 const playerW = 0.8;
-                // Largura do Objeto (definimos 0.6 ou 0.8 ali em cima, ou usa padrão)
                 const objW = obj.width || 0.6;
 
-                // Lógica de Sobreposição Lateral (X)
-                // Se a distância entre o centro do player e o centro do objeto
-                // for menor que a soma de suas metades, houve colisão.
                 if (
                     Math.abs(this.playerLogic.xOffset - obj.offset) <
                     playerW / 2 + objW / 2
@@ -347,6 +346,19 @@ export class Game extends Scene {
         }
 
         this.updateTraffic(delta, playerZ);
+
+        if (!this.raceFinished && playerZ >= this.finishZ) {
+            this.raceFinished = true;
+            this.playerLogic.speed = 0;
+            this.engineSfx?.stop();
+
+            const remaining = Math.max(0, this.timeDisplay); 
+            this.registry.set("remainingTime", remaining);
+
+            this.showCheckpointMessage("FINISH!");
+            this.scene.pause();
+            this.scene.launch("Finish", { remainingTime: remaining });
+        }
 
         // ===== CHECKPOINT DETECTION =====
         if (
@@ -419,6 +431,12 @@ export class Game extends Scene {
             segment.p1.index = segment.index;
             segment.p2.index = segment.index;
 
+            segment.p1.isFinish = !!segment.isFinish;
+            segment.p2.isFinish = !!segment.isFinish;
+
+            segment.p1.finishStage = segment.finishStage;
+            segment.p2.finishStage = segment.finishStage;
+
             drawSegment(
                 this.graphics,
                 segment.p1,
@@ -456,12 +474,12 @@ export class Game extends Scene {
                     }
 
                     sprite.x = point.screen.x;
-                    sprite.y = point.screen.y;
 
-                    const scale = point.screen.w / 300;
                     const customScale = obj.scale || 1;
-                    sprite.setScale(scale * customScale);
+                    const finalScale = (point.screen.w / 300) * customScale;
 
+                    sprite.y = point.screen.y - (obj.raise || 0) * finalScale;
+                    sprite.setScale(finalScale);
                     sprite.setDepth(150000 - point.screen.y);
                 }
             }
@@ -515,9 +533,9 @@ export class Game extends Scene {
             );
         };
 
-        plan.forEach((section) => {
-            add(section.curve, section.length, section.elevation || 0);
-        });
+        plan.forEach((section) =>
+            add(section.curve, section.length, section.elevation || 0)
+        );
 
         this.segments = segments;
         this.totalSegments = segments.length;
@@ -536,7 +554,64 @@ export class Game extends Scene {
             }
         });
 
+        // ===== FINISH =====
+        this.finishSegmentIndex = Math.max(0, this.totalSegments - 8);
+
+        this.finishLineT = 0.62;
+
+        this.finishApproachSegments = 4;
+
+        this.finishZ =
+            (this.finishSegmentIndex + this.finishLineT) * this.segmentLength;
+
+        for (let i = 0; i <= this.finishApproachSegments; i++) {
+            const idx = this.finishSegmentIndex - i;
+            const seg = this.segments[idx];
+            if (seg) seg.finishStage = i;
+        }
+
+        this.addRaceMarkers();
+
         return segments;
+    }
+
+    addRaceMarkers() {
+        const sideOffset = 5.2;
+
+        for (const idx of this.checkpoints) {
+            const seg = this.segments[idx];
+            if (!seg) continue;
+
+            seg.sprites.push({
+                source: "checkpointEsquerdo",
+                offset: -sideOffset,
+                scale: 2.4,
+                width: 1.0,
+                noCollision: true,
+                raise: 40,
+            });
+
+            seg.sprites.push({
+                source: "checkpointDireito",
+                offset: sideOffset,
+                scale: 2.4,
+                width: 1.0,
+                noCollision: true,
+                raise: 40,
+            });
+        }
+
+        const finishSeg = this.segments[this.finishSegmentIndex];
+        if (finishSeg) {
+            finishSeg.sprites.push({
+                source: "finish",
+                offset: 0,
+                scale: 3.2,
+                width: 3.5,
+                noCollision: true,
+                raise: 5,
+            });
+        }
     }
 
     addRoadSection(curve, length, segments, segmentLength, elevation = 0) {
@@ -1015,6 +1090,16 @@ function drawSegment(g, p1Point, p2Point, color, screenWidth = 800, lanes = 3) {
             laneX2 += laneW2;
         }
     }
+
+    if (p1Point.finishStage !== undefined) {
+        const stage = p1Point.finishStage;
+
+        const centerT = 0.62;
+        const thicknessT = stage === 0 ? 0.28 : 0.16;
+        const alpha = stage === 0 ? 1 : Math.max(0.18, 0.75 - stage * 0.15);
+
+        drawFinishLine(g, p1, p2, 10, centerT, thicknessT, alpha);
+    }
 }
 
 function drawPoly(g, pts) {
@@ -1025,4 +1110,53 @@ function drawPoly(g, pts) {
     }
     g.closePath();
     g.fill();
+}
+
+function lerp(a, b, t) {
+    return a + (b - a) * t;
+}
+
+function drawFinishLine(
+    g,
+    p1,
+    p2,
+    squares = 10,
+    centerT = 0.62,
+    thicknessT = 0.28,
+    alpha = 1
+) {
+    const half = thicknessT * 0.5;
+    const t1 = Phaser.Math.Clamp(centerT - half, 0, 0.95);
+    const t2 = Phaser.Math.Clamp(centerT + half, 0.05, 1);
+
+    const x1 = lerp(p1.x, p2.x, t1);
+    const y1 = lerp(p1.y, p2.y, t1);
+    const w1 = lerp(p1.w, p2.w, t1);
+
+    const x2 = lerp(p1.x, p2.x, t2);
+    const y2 = lerp(p1.y, p2.y, t2);
+    const w2 = lerp(p1.w, p2.w, t2);
+
+    const left1 = x1 - w1,
+        right1 = x1 + w1;
+    const left2 = x2 - w2,
+        right2 = x2 + w2;
+
+    const step1 = (right1 - left1) / squares;
+    const step2 = (right2 - left2) / squares;
+
+    for (let i = 0; i < squares; i++) {
+        g.fillStyle(i % 2 === 0 ? 0xffffff : 0x111111, alpha);
+
+        drawPoly(g, [
+            left1 + step1 * i,
+            y1,
+            left1 + step1 * (i + 1),
+            y1,
+            left2 + step2 * (i + 1),
+            y2,
+            left2 + step2 * i,
+            y2,
+        ]);
+    }
 }
