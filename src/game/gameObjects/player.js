@@ -11,7 +11,6 @@ export default class Player {
         this.brakeRate = 30; // frenagem por segundo
         this.coastRate = 10; // desaceleração natural
         this.lateralSpeed = 0.01;
-
         // offroad
         this.offRoadMaxSpeed = 50;
         this.offRoadAccelRate = 10;
