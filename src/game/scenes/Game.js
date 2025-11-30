@@ -11,6 +11,7 @@ export class Game extends Scene {
     }
 
     create() {
+        this.raceFinished = false;
         this.sound.stopAll();
 
         const backgroundMusic = this.sound.add("backgroundMusic");

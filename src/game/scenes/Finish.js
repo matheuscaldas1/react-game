@@ -115,6 +115,7 @@ export class Finish extends Scene {
     }
 
     startGame() {
+        this.scene.stop("Game"); 
         this.scene.stop("GameOver");
         this.scene.stop("Finish");
         this.scene.start("Game");
