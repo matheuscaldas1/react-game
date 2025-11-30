@@ -68,6 +68,21 @@ export class Game extends Scene {
             rightArrow: "RIGHT",
         });
 
+        this.MAX_PLAYER_SPEED = 120;
+        this.pendingBoost = 0;
+        this.boostPerTap = 20;
+        this.boostApplyPerSec = 260;
+        this.pendingBoostCap = this.MAX_PLAYER_SPEED * 1.2;
+
+        this.virtualGasMs = 0;
+        this.virtualGasPerTap = 140;
+        this.virtualGasCapMs = 520;
+
+        this.input.keyboard.on("keydown-W", (e) => this.onAccelTap(e));
+        this.input.keyboard.on("keydown-UP", (e) => this.onAccelTap(e));
+
+        this.setupSpeedometer();
+
         // ESC para Pausar
         this.input.keyboard.on("keydown-ESC", () => {
             if (this.scene.isActive("Pause")) return;
@@ -101,6 +116,9 @@ export class Game extends Scene {
         });
 
         this.playerLogic = new Player();
+
+        this.playerLogic.maxSpeed = this.MAX_PLAYER_SPEED; // 200
+
 
         this.player = this.add.sprite(
             this.camera.screenWidth / 2,
@@ -200,6 +218,103 @@ export class Game extends Scene {
         this.xOffset = 0;
     }
 
+    onAccelTap(e) {
+        // evita OS key-repeat (segurar tecla não conta como “tap” infinito)
+        if (e && e.repeat) return;
+
+        this.pendingBoost = Math.min(
+            this.pendingBoost + this.boostPerTap,
+            this.pendingBoostCap
+        );
+        this.virtualGasMs = Math.min(
+            this.virtualGasMs + this.virtualGasPerTap,
+            this.virtualGasCapMs
+        );
+    }
+
+    setupSpeedometer() {
+        const w = Number(this.game.config.width);
+        const h = Number(this.game.config.height);
+
+        this.speedo = {
+            x: 95,
+            y: h - 90,
+            r: 62,
+            gfx: this.add.graphics().setDepth(1000).setScrollFactor(0),
+            text: this.add
+                .text(24, h - 52, "SPD 0", {
+                    fontFamily: "Arial",
+                    fontSize: "18px",
+                    fontStyle: "bold",
+                    color: "#ffffff",
+                    stroke: "#000",
+                    strokeThickness: 4,
+                })
+                .setDepth(1001)
+                .setScrollFactor(0),
+        };
+
+        // primeira renderização
+        this.updateSpeedometer(0);
+    }
+
+    updateSpeedometer(speed) {
+        if (!this.speedo) return;
+
+        const { x, y, r, gfx, text } = this.speedo;
+
+        const max = this.MAX_PLAYER_SPEED ?? 110;
+        const t = Phaser.Math.Clamp(speed / max, 0, 1);
+
+        const minAngle = Phaser.Math.DegToRad(150);
+        const maxAngle = Phaser.Math.DegToRad(390);
+
+        const ang = Phaser.Math.Linear(minAngle, maxAngle, t);
+
+        const start = Phaser.Math.DegToRad(210);
+        const end = Phaser.Math.DegToRad(-30);
+
+        gfx.clear();
+
+        // fundo
+        gfx.fillStyle(0x000000, 0.35);
+        gfx.fillCircle(x, y, r + 14);
+
+        // borda
+        gfx.lineStyle(4, 0xffffff, 0.85);
+        gfx.strokeCircle(x, y, r + 12);
+
+        // arco
+        gfx.lineStyle(6, 0xffffff, 0.55);
+        gfx.beginPath();
+        gfx.arc(x, y, r, minAngle, maxAngle, false);
+        gfx.strokePath();
+
+        // ticks
+        gfx.lineStyle(2, 0xffffff, 0.65);
+        for (let i = 0; i <= 10; i++) {
+            const a = Phaser.Math.Linear(minAngle, maxAngle, i / 10);
+            const inner = r - 6;
+            const outer = r + 6;
+            gfx.beginPath();
+            gfx.moveTo(x + Math.cos(a) * inner, y + Math.sin(a) * inner);
+            gfx.lineTo(x + Math.cos(a) * outer, y + Math.sin(a) * outer);
+            gfx.strokePath();
+        }
+
+        // agulha
+        gfx.lineStyle(3, 0xff3b3b, 1);
+        gfx.beginPath();
+        gfx.moveTo(x, y);
+        gfx.lineTo(x + Math.cos(ang) * (r - 10), y + Math.sin(ang) * (r - 10));
+        gfx.strokePath();
+
+        gfx.fillStyle(0xff3b3b, 1);
+        gfx.fillCircle(x, y, 4);
+
+        text.setText(`SPD ${Math.round(speed)}`);
+    }
+
     checkTrafficCollision(cars, playerZ) {
         const playerX = this.playerLogic.xOffset;
 
@@ -263,8 +378,8 @@ export class Game extends Scene {
         // Proteção: se o som não estiver tocando, ignora
         if (this.engineSfx && this.engineSfx.isPlaying) {
             const currentSpeed = this.playerLogic.speed;
-            // Assumindo que sua velocidade máxima seja por volta de 240 (ajuste esse número)
-            const maxSpeed = 80;
+            const maxSpeed = this.MAX_PLAYER_SPEED ?? 200;
+
 
             // Cálculo da taxa:
             // Começa em 0.5 (marcha lenta) e adiciona até +1.5 baseado na % da velocidade
@@ -298,6 +413,20 @@ export class Game extends Scene {
             left: this.keys.left.isDown || this.keys.leftArrow.isDown,
             right: this.keys.right.isDown || this.keys.rightArrow.isDown,
         };
+
+        if (this.virtualGasMs > 0) {
+            this.virtualGasMs -= delta;
+            if (this.virtualGasMs < 0) this.virtualGasMs = 0;
+            inputState.up = true;
+        }
+
+        if (inputState.down) {
+            this.pendingBoost = Math.max(
+                0,
+                this.pendingBoost - this.boostApplyPerSec * 2 * (delta / 1000)
+            );
+            this.virtualGasMs = 0;
+        }
 
         const playerZ = this.camera.z + this.playerOffset;
         const baseSegmentIndex =
@@ -351,8 +480,10 @@ export class Game extends Scene {
             this.raceFinished = true;
             this.playerLogic.speed = 0;
             this.engineSfx?.stop();
+            this.pendingBoost = 0;
+            this.virtualGasMs = 0;
 
-            const remaining = Math.max(0, this.timeDisplay); 
+            const remaining = Math.max(0, this.timeDisplay);
             this.registry.set("remainingTime", remaining);
 
             this.showCheckpointMessage("FINISH!");
@@ -377,7 +508,27 @@ export class Game extends Scene {
             currentSegment,
             this.game.loop.delta
         );
+
+        const dt = Math.max(0.0001, delta / 1000);
+
+        if (this.pendingBoost > 0) {
+            const add = Math.min(this.pendingBoost, this.boostApplyPerSec * dt);
+            this.playerLogic.speed += add;
+            this.pendingBoost -= add;
+        }
+
+        const offroadCap = currentSegment?.isOffRoad
+            ? this.MAX_PLAYER_SPEED * 0.65
+            : this.MAX_PLAYER_SPEED;
+        this.playerLogic.speed = Phaser.Math.Clamp(
+            this.playerLogic.speed,
+            0,
+            offroadCap
+        );
+
         this.camera.moveZ(this.playerLogic.speed);
+
+        this.updateSpeedometer(this.playerLogic.speed);
 
         if (inputState.left) this.camera.moveX(-0.02);
         if (inputState.right) this.camera.moveX(0.02);
@@ -865,7 +1016,8 @@ export class Game extends Scene {
             // curva empurra lateralmente
             const curve = seg.curve || 0;
             const centrifugalFactor = 0.01;
-            const maxSpeed = this.playerLogic?.maxSpeed ?? 80;
+            const maxSpeed = this.MAX_PLAYER_SPEED ?? 200;
+
 
             //car.x -= curve * (car.speed / maxSpeed) * centrifugalFactor * frameScale;
             car.x = Phaser.Math.Clamp(car.x, -2.2, 2.2);
@@ -937,6 +1089,9 @@ export class Game extends Scene {
 
         // 4. Evita múltiplas colisões (Mantém sua lógica)
         car.z -= 2; // Pequeno recuo para sair da hitbox imediatamente
+
+        this.pendingBoost = 0;
+        this.virtualGasMs = 0;
     }
 
     handleSceneryCollision(obj) {
@@ -947,6 +1102,9 @@ export class Game extends Scene {
 
         // 1. PARA O CARRO DRASTICAMENTE
         this.playerLogic.speed = 0;
+
+        this.pendingBoost = 0;
+        this.virtualGasMs = 0;
 
         // 2. EMPURRA DE VOLTA (para não ficar preso dentro da árvore)
         // Se bateu na direita, joga um pouco pra esquerda
