@@ -37,9 +37,9 @@ export class Finish extends Scene {
             .setOrigin(0.5);
 
         const devTimes = [
-            { name: "Matheus Dev", time: 48 },
-            { name: "Nathan Dev", time: 50 },
-            { name: "Sthanley Dev", time: 44 },
+            { name: "Matheus Dev", time: 8 },
+            { name: "Nathan Dev", time: 17 },
+            { name: "Sthanley Dev", time: 15 },
         ];
 
         const you = { name: "YOU", time: this.remainingTime, isYou: true };
