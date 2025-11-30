@@ -95,11 +95,22 @@ export class Game extends Scene {
         this.roadPlan = [
             { curve: 0.0, length: 1000, elevation: 0 },
             { curve: 1.0, length: 1000, elevation: 0 },
-            { curve: 0.0, length: 1000, elevation: 0 }, // reta inicial
+            { curve: -1.0, length: 200, elevation: 0 },
+            { curve: 1.0, length: 200, elevation: 0 },
+            { curve: -1.0, length: 200, elevation: 0 },
+            { curve: 1.0, length: 200, elevation: 0 },
+            { curve: -1.0, length: 200, elevation: 0 },
+            { curve: 1.0, length: 200, elevation: 0 },
             { curve: -0.6, length: 1500, elevation: 0 }, // curva direita
             { curve: -0.5, length: 600, elevation: 0 }, // curva esquerda
             { curve: 0.0, length: 300, elevation: 0 }, // reta longa
             { curve: 0.4, length: 1200, elevation: 0 }, // curva direita leve
+            { curve: -1.0, length: 200, elevation: 0 },
+            { curve: 1.0, length: 200, elevation: 0 },
+            { curve: -1.0, length: 200, elevation: 0 },
+            { curve: 1.0, length: 200, elevation: 0 },
+            { curve: -1.0, length: 200, elevation: 0 },
+            { curve: 1.0, length: 200, elevation: 0 },
             { curve: 0.0, length: 2000, elevation: 0 }, // reta final
         ];
         this.segments = this.buildRoad(this.roadPlan);
@@ -172,7 +183,7 @@ export class Game extends Scene {
         this.bgSix.setDepth(-1);
 
         // === TIMER STYLE "OUTRUN" ===
-        this.timeTotal = 60000;
+        this.timeTotal = 50000;
         this.timeRemaining = this.timeTotal;
         this.timeDisplay = 0;
 
@@ -498,8 +509,8 @@ export class Game extends Scene {
             !currentSegment.checkpointHit
         ) {
             currentSegment.checkpointHit = true;
-            this.addTime(10); // +10 segundos
-            this.showCheckpointMessage("+60s");
+            this.addTime(40);
+            this.showCheckpointMessage("+40s");
         }
 
         // MOVIMENTO
@@ -802,7 +813,7 @@ export class Game extends Scene {
     }
 
     addTime(seconds) {
-        this.timeRemaining += seconds * 6000;
+        this.timeRemaining += seconds * 1000;
 
         // Evita número negativo em loops futuros
         this.timeDisplay = Math.floor(this.timeRemaining / 1000);
